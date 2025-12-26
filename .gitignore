@@ -1,0 +1,12 @@
+# Render ignores node_modules and python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.env
+.DS_Store
+*.log
