@@ -12,11 +12,7 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: WEBHOOK_MODE
-        value: true
-      - key: PORT
-        fromService:
-          type: web
-          property: port
+        value: false
       - key: USER_TIMEZONE
         value: Africa/Accra
       - key: ON_RENDER
