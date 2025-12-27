@@ -1,20 +1,5 @@
-services:
-  - type: web
-    name: baron-ai-bot
-    runtime: python3
-    buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.0
-      - key: BOT_TOKEN
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: WEBHOOK_MODE
-        value: false
-      - key: RENDER_SERVICE_NAME
-        value: baron-ai-bot
+# Railway deployment configuration
+# This file is no longer needed - using Railway instead
       - key: PORT
         fromService:
           type: web
