@@ -129,26 +129,28 @@ if __name__ == '__main__':
 
     # Determine mode and handle conflicts
     on_render = (os.getenv('RENDER') == 'true' or
-                os.getenv('ON_RENDER', '').lower() == 'true' or
-                os.getenv('WEBHOOK_MODE', '').lower() == 'true')
+                os.getenv('ON_RENDER', '').lower() == 'true')
 
+    webhook_mode = os.getenv('WEBHOOK_MODE', '').lower() == 'true'
     webhook_url = os.getenv('WEBHOOK_URL')
 
     logging.info("=" * 50)
     logging.info("BARON AI BOT STARTUP DIAGNOSTIC")
     logging.info("=" * 50)
     logging.info(f"ON_RENDER: {on_render}")
+    logging.info(f"WEBHOOK_MODE: {webhook_mode}")
     logging.info(f"WEBHOOK_URL: {webhook_url}")
-    logging.info(f"WEBHOOK_MODE: {os.getenv('WEBHOOK_MODE')}")
 
-    if on_render or webhook_url:
-        # PRODUCTION: Webhook mode only
-        logging.info("🚀 PRODUCTION MODE: Using webhook only")
+    if on_render:
+        # RENDER: Force polling mode (most reliable)
+        logging.info("RENDER DETECTED: Using polling mode (most reliable)")
+        logging.info("Polling mode avoids webhook conflicts")
+        logging.info("=" * 50)
+        run_bot_polling()
 
-        if not webhook_url:
-            service_name = os.getenv('RENDER_SERVICE_NAME', 'baron-ai-bot')
-            webhook_url = f"https://{service_name}.onrender.com"
-            logging.info(f"Constructed webhook URL: {webhook_url}")
+    elif webhook_mode and webhook_url:
+        # MANUAL WEBHOOK MODE
+        logging.info("MANUAL WEBHOOK MODE: Using webhook")
 
         logging.info(f"Starting Flask server with webhook: {webhook_url}")
 
@@ -165,7 +167,6 @@ if __name__ == '__main__':
             loop.close()
         except Exception as e:
             logging.error(f"Webhook setup issue: {e}")
-            # Continue anyway
 
         # Start Flask server
         port = int(os.getenv('PORT', 10000))
@@ -177,9 +178,9 @@ if __name__ == '__main__':
 
     else:
         # LOCAL DEVELOPMENT: Polling mode
-        logging.warning("🔧 LOCAL DEVELOPMENT MODE: Using polling")
+        logging.warning("LOCAL DEVELOPMENT MODE: Using polling")
         logging.warning("This should NOT be used in production!")
-        logging.warning("Set WEBHOOK_MODE=true for production")
+        logging.warning("For production, use Render (auto-polling) or set WEBHOOK_MODE=true")
         logging.info("=" * 50)
 
         run_bot_polling()

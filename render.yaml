@@ -12,12 +12,9 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: WEBHOOK_MODE
-        value: true
-      - key: WEBHOOK_URL
-        fromService:
-          type: web
-          property: host
-          value: https://${self.host}
+        value: false
+      - key: RENDER_SERVICE_NAME
+        value: baron-ai-bot
       - key: PORT
         fromService:
           type: web
