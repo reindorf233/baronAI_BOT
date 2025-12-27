@@ -97,15 +97,37 @@ def main():
                 webhook_url = render_url
                 logging.info(f"Using Render service URL: {webhook_url}")
             else:
-                # Fallback: construct from ON_RENDER and service name
-                on_render = os.getenv("ON_RENDER", "").lower() == "true"
-                service_name = os.getenv("RENDER_SERVICE_NAME", "baron-ai-bot")
+                # Check if we're on Render (multiple ways)
+                on_render = (os.getenv("ON_RENDER", "").lower() == "true" or
+                           os.getenv("RENDER") == "true" or
+                           os.getenv("DYNO") is not None or  # Heroku style
+                           "render" in os.getenv("PATH", "").lower())
+
                 if on_render:
-                    webhook_url = f"https://{service_name}.onrender.com"
-                    logging.info(f"Constructed webhook URL from service name: {webhook_url}")
+                    # Try different Render environment variables for service URL
+                    service_name = (os.getenv("RENDER_SERVICE_NAME") or
+                                  os.getenv("SERVICE_NAME") or
+                                  "baron-ai-bot")
+
+                    # Try to get the external URL from various sources
+                    external_url = (os.getenv("RENDER_EXTERNAL_URL") or
+                                  os.getenv("EXTERNAL_URL"))
+
+                    if external_url:
+                        webhook_url = external_url
+                    else:
+                        # Construct URL from service name
+                        webhook_url = f"https://{service_name}.onrender.com"
+
+                    logging.info(f"Constructed webhook URL for Render: {webhook_url}")
                 else:
+                    # Debug: show what environment variables are available
                     logging.error("Webhook URL required for webhook mode")
-                    logging.error("Set WEBHOOK_URL environment variable or deploy on Render")
+                    logging.error("Available environment variables:")
+                    for key in ["RENDER_EXTERNAL_URL", "ON_RENDER", "RENDER", "RENDER_SERVICE_NAME"]:
+                        value = os.getenv(key, "NOT_SET")
+                        logging.error(f"  {key}: {value}")
+                    logging.error("Set WEBHOOK_URL environment variable or ensure you're on Render")
                     sys.exit(1)
         
         logging.info(f"Starting webhook mode on port {port}")
