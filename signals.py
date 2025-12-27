@@ -370,6 +370,120 @@ def calculate_enhanced_risk_reward(entry_price: float, direction: str, data: pd.
             tp2 = current_price * (1 - risk_pct * 3)
         return stop_loss, tp1, tp2, 2.0
 
+def analyze_asset_correlation(symbol: str, data: pd.DataFrame) -> str:
+    """Analyze correlation between the current asset and other major assets"""
+    try:
+        # Define correlation pairs
+        correlation_pairs = {
+            'EURUSD': ['GBPUSD', 'USDCHF', 'USDJPY', 'GC=F', 'BTC-USD'],
+            'GBPUSD': ['EURUSD', 'USDJPY', 'GC=F', 'BTC-USD'],
+            'USDJPY': ['EURUSD', 'GBPUSD', 'GC=F'],
+            'USDCHF': ['EURUSD', 'GC=F'],
+            'GC=F': ['EURUSD', 'GBPUSD', 'BTC-USD', 'USDJPY'],
+            'BTC-USD': ['GC=F', 'EURUSD', 'ETH-USD']
+        }
+
+        if symbol not in correlation_pairs:
+            return "Correlation analysis not available for this asset"
+
+        correlations = []
+        base_data = data['Close'].pct_change().dropna()
+
+        for pair in correlation_pairs[symbol]:
+            try:
+                # Get comparison data
+                comp_data = fetch_candles(pair, timeframe="H1", bars=100)
+
+                if comp_data.empty:
+                    continue
+
+                comp_returns = comp_data['Close'].pct_change().dropna()
+
+                # Align data lengths
+                min_len = min(len(base_data), len(comp_returns))
+                if min_len < 20:
+                    continue
+
+                base_aligned = base_data[-min_len:]
+                comp_aligned = comp_returns[-min_len:]
+
+                # Calculate correlation
+                corr = base_aligned.corr(comp_aligned)
+
+                # Interpret correlation
+                if corr > 0.7:
+                    strength = "🔴 Very High"
+                elif corr > 0.5:
+                    strength = "🟠 High"
+                elif corr > 0.3:
+                    strength = "🟡 Moderate"
+                elif corr > -0.3:
+                    strength = "🟢 Low"
+                elif corr > -0.5:
+                    strength = "🔵 Moderate Inverse"
+                elif corr > -0.7:
+                    strength = "🟣 High Inverse"
+                else:
+                    strength = "🟤 Very High Inverse"
+
+                correlations.append(f"{pair}: {corr:.2f} {strength}")
+
+            except Exception:
+                continue
+
+        if not correlations:
+            return "Correlation data temporarily unavailable"
+
+        return " | ".join(correlations[:3])  # Show top 3 correlations
+
+    except Exception:
+        return "Correlation analysis error"
+
+def generate_market_sentiment() -> str:
+    """Generate overall market sentiment based on major asset correlations"""
+    try:
+        # Analyze major pairs for overall market direction
+        pairs_to_check = ['EURUSD', 'GBPUSD', 'USDJPY', 'GC=F']
+        bullish_signals = 0
+        bearish_signals = 0
+
+        for pair in pairs_to_check:
+            try:
+                data = fetch_candles(pair, timeframe="H1", bars=50)
+                if data.empty:
+                    continue
+
+                # Simple trend analysis
+                sma_20 = data['Close'].rolling(20).mean().iloc[-1]
+                sma_50 = data['Close'].rolling(50).mean().iloc[-1]
+                current = data['Close'].iloc[-1]
+
+                if current > sma_20 > sma_50:
+                    bullish_signals += 1
+                elif current < sma_20 < sma_50:
+                    bearish_signals += 1
+
+            except Exception:
+                continue
+
+        total_signals = bullish_signals + bearish_signals
+        if total_signals == 0:
+            return "🟡 Neutral Market"
+
+        bullish_ratio = bullish_signals / total_signals
+
+        if bullish_ratio > 0.7:
+            return "🟢 Bullish Market"
+        elif bullish_ratio > 0.5:
+            return "🟡 Mixed Market"
+        elif bullish_ratio > 0.3:
+            return "🔴 Bearish Market"
+        else:
+            return "🔴 Very Bearish Market"
+
+    except Exception:
+        return "Market sentiment unavailable"
+
 def generate_manual_execution_guide(symbol: str, direction: str, entry_price: float, stop_loss: float, tp1: float, tp2: float, lot_size: float = 0.01) -> str:
     """Generate step-by-step manual execution guide"""
     guide = f"🎯 *MANUAL EXECUTION GUIDE*\n\n"
@@ -676,7 +790,15 @@ def get_smc_prediction(symbol: str, filter_perfect: bool = False) -> str:
 
         # Multi-timeframe Analysis
         mtf_analysis = analyze_multi_timeframe(data_15m, htf_data, htf_data)  # Using htf_data for both 1H and 4H for now
-        msg += f"Multi-TF: {mtf_analysis}\n\n"
+        msg += f"Multi-TF: {mtf_analysis}\n"
+
+        # Correlation Analysis
+        correlation_analysis = analyze_asset_correlation(symbol, data_15m)
+        msg += f"Correlation: {correlation_analysis}\n"
+
+        # Market Sentiment
+        market_sentiment = generate_market_sentiment()
+        msg += f"Market Sentiment: {market_sentiment}\n\n"
 
         # Enhanced Risk Management
         if fvg:
@@ -1031,31 +1153,77 @@ def get_perfect_signals() -> List[Dict]:
 
 
 def get_daily_summary() -> str:
-    """Generate daily summary including synthetic trends"""
+    """Generate daily summary including synthetic trends and correlations"""
     try:
         msg = "📈 *Daily Market Summary*\n\n"
-        
+
+        # Market Sentiment
+        market_sentiment = generate_market_sentiment()
+        msg += f"🌍 *Market Sentiment:* {market_sentiment}\n\n"
+
         # Forex trends
         forex_symbols = ["EURUSD", "GBPUSD", "GC=F", "BTC-USD"]
-        msg += "💱 *Forex & Crypto:*\n"
+        msg += "💱 *Forex & Crypto Trends:*\n"
         for symbol in forex_symbols:
             try:
                 result = get_smc_prediction(symbol)
                 conf_match = re.search(r"Strategy Confidence: (\d+)/10", result)
                 rec_match = re.search(r"Recommendation: \*\*(\w+)\*\*", result)
                 if conf_match and rec_match:
-                    msg += f"  • {symbol}: {rec_match.group(1)} ({conf_match.group(1)}/10)\n"
+                    confidence = int(conf_match.group(1))
+                    recommendation = rec_match.group(1)
+
+                    # Add confidence emoji
+                    if confidence >= 8:
+                        conf_emoji = "🔥"
+                    elif confidence >= 6:
+                        conf_emoji = "✅"
+                    else:
+                        conf_emoji = "⚠️"
+
+                    msg += f"  • {symbol}: {recommendation} ({confidence}/10) {conf_emoji}\n"
             except Exception:
                 continue
-        
+
+        # Key Correlations
+        msg += "\n📊 *Key Correlations:*\n"
+        try:
+            # EURUSD correlations (most traded pair)
+            eurusd_data = fetch_candles("EURUSD", timeframe="H1", bars=100)
+            if not eurusd_data.empty:
+                correlations = analyze_asset_correlation("EURUSD", eurusd_data)
+                msg += f"  • EURUSD: {correlations}\n"
+
+            # Gold correlations
+            gold_data = fetch_candles("GC=F", timeframe="H1", bars=100)
+            if not gold_data.empty:
+                gold_corr = analyze_asset_correlation("GC=F", gold_data)
+                msg += f"  • Gold: {gold_corr}\n"
+        except Exception:
+            msg += "  • Correlation data loading...\n"
+
         # Synthetic trends
-        msg += "\n📊 *Synthetic Indices:*\n"
+        msg += "\n🎯 *Synthetic Indices:*\n"
         synthetic_indices = ["V75", "BOOM", "CRASH", "STEP", "JUMP"]
         for idx in synthetic_indices:
             trend = get_mock_synthetic_data(idx)["trend"]
-            msg += f"  • {idx}: {trend.upper()} trend\n"
-        
-        msg += "\n⚠️ *Disclaimer: This is a summary, not trading advice.*"
+            # Add trend emoji
+            if "bull" in trend.lower():
+                trend_emoji = "🟢"
+            elif "bear" in trend.lower():
+                trend_emoji = "🔴"
+            else:
+                trend_emoji = "🟡"
+            msg += f"  • {idx}: {trend.upper()} {trend_emoji}\n"
+
+        # Trading Tips
+        msg += "\n💡 *Today's Trading Tips:*\n"
+        msg += "  • Check correlations before entering positions\n"
+        msg += "  • Use 10/10 signals for highest probability\n"
+        msg += "  • Follow manual execution guide for precision\n"
+        msg += "  • Monitor volume for confirmation\n"
+
+        msg += "\n⚠️ *Disclaimer: This is analysis, not trading advice.*"
         return msg
     except Exception as e:
         return f"⚠️ Error generating summary: {str(e)}"
