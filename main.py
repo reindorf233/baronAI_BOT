@@ -133,7 +133,7 @@ def main():
         logging.info(f"Starting webhook mode on port {port}")
         logging.info(f"Webhook URL: {webhook_url}")
         
-        # Webhook mode uses async
+        # Webhook mode uses async - handle event loop properly
         async def run_webhook():
             try:
                 await app.bot.set_webhook(webhook_url)
@@ -146,9 +146,22 @@ def main():
                 )
             except Exception as e:
                 logging.error(f"Webhook setup failed: {e}")
+                import traceback
+                traceback.print_exc()
                 sys.exit(1)
-        
-        asyncio.run(run_webhook())
+
+        # Handle event loop for Render deployment
+        try:
+            # Check if there's already a running event loop
+            loop = asyncio.get_running_loop()
+            logging.warning("Event loop already running, using existing loop")
+            # If loop exists, we need to run differently
+            import nest_asyncio
+            nest_asyncio.apply()
+            asyncio.run(run_webhook())
+        except RuntimeError:
+            # No event loop running, safe to use asyncio.run()
+            asyncio.run(run_webhook())
     else:
         logging.info("Starting polling mode")
         logging.info("For production, use --webhook with WEBHOOK_URL set")
