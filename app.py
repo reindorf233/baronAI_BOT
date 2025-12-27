@@ -127,26 +127,43 @@ if __name__ == '__main__':
     # Create bot application
     create_bot_app()
 
-    # Check if we should use webhook or polling
-    use_webhook = os.getenv('WEBHOOK_MODE', 'false').lower() == 'true'
+    # Always use webhook mode for production (Render deployment)
+    # Check if we're on Render or have webhook configuration
+    on_render = (os.getenv('RENDER') == 'true' or
+                os.getenv('ON_RENDER', '').lower() == 'true' or
+                os.getenv('WEBHOOK_MODE', '').lower() == 'true')
+
     webhook_url = os.getenv('WEBHOOK_URL')
 
-    if use_webhook and webhook_url:
-        # Webhook mode - Flask will handle HTTP requests
+    if on_render or webhook_url:
+        # Force webhook mode for production
+        if not webhook_url:
+            # Try to construct webhook URL for Render
+            service_name = os.getenv('RENDER_SERVICE_NAME', 'baron-ai-bot')
+            webhook_url = f"https://{service_name}.onrender.com"
+            logging.info(f"Constructed webhook URL: {webhook_url}")
+
         logging.info(f"Starting Flask server with webhook mode")
         logging.info(f"Webhook URL: {webhook_url}")
 
-        # Set webhook in background
-        def init_webhook():
-            asyncio.run(bot_app.bot.set_webhook(webhook_url))
+        # Set webhook synchronously before starting Flask
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(bot_app.bot.set_webhook(webhook_url))
+            loop.close()
             logging.info("Webhook set successfully")
-        Thread(target=init_webhook).start()
+        except Exception as e:
+            logging.error(f"Failed to set webhook: {e}")
+            # Continue anyway - webhook might already be set
 
         # Start Flask server
         port = int(os.getenv('PORT', 10000))
+        logging.info(f"Starting Flask on port {port}")
         app.run(host='0.0.0.0', port=port, debug=False)
 
     else:
-        # Polling mode - run bot directly
-        logging.info("Starting in polling mode")
+        # Local development - polling mode
+        logging.warning("No webhook configuration found - using polling mode")
+        logging.warning("This is for local development only!")
         run_bot_polling()
