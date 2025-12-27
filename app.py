@@ -20,6 +20,11 @@ app = Flask(__name__)
 # Global bot application
 bot_app = None
 
+async def error_handler(update, context):
+    """Handle bot errors"""
+    logging.error(f"Bot error: {context.error}")
+    logging.error(f"Update: {update}")
+
 def create_bot_app():
     """Create and configure the Telegram bot application"""
     global bot_app
@@ -27,6 +32,9 @@ def create_bot_app():
     if bot_app is None:
         # Create bot application (don't start it yet)
         bot_app = Application.builder().token(BOT_TOKEN).build()
+
+        # Add error handler
+        bot_app.add_error_handler(error_handler)
 
         # Setup all handlers
         setup_handlers(bot_app)
@@ -46,20 +54,37 @@ def health():
     return {'status': 'healthy'}
 
 @app.route(f'/{BOT_TOKEN.split(":")[0]}', methods=['POST'])
-async def webhook():
+def webhook():
     """Handle Telegram webhook"""
     try:
         # Get the update from Telegram
         update_data = request.get_json()
         update = Update.de_json(update_data, bot_app.bot)
 
-        # Process the update
-        await bot_app.process_update(update)
+        # Process the update asynchronously in a thread
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+
+        def process_async():
+            """Run async bot processing in a new event loop"""
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(bot_app.process_update(update))
+                loop.close()
+            except Exception as e:
+                logging.error(f"Async processing error: {e}")
+
+        # Run in thread pool to avoid blocking
+        executor = ThreadPoolExecutor(max_workers=4)
+        executor.submit(process_async)
 
         return Response('OK', status=200)
 
     except Exception as e:
         logging.error(f"Webhook error: {e}")
+        import traceback
+        traceback.print_exc()
         return Response('Error', status=500)
 
 @app.route('/set_webhook', methods=['GET'])
@@ -68,9 +93,17 @@ def set_webhook():
     try:
         webhook_url = os.getenv('WEBHOOK_URL')
         if webhook_url:
-            # Run this in a separate thread to avoid blocking
+            # Run webhook setup in a thread
             def set_hook():
-                asyncio.run(bot_app.bot.set_webhook(webhook_url))
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(bot_app.bot.set_webhook(webhook_url))
+                    loop.close()
+                    logging.info(f"Webhook set to: {webhook_url}")
+                except Exception as e:
+                    logging.error(f"Failed to set webhook: {e}")
+
             Thread(target=set_hook).start()
             return {'status': 'Webhook setting initiated', 'url': webhook_url}
         else:
