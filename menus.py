@@ -13,7 +13,8 @@ main_menu = ReplyKeyboardMarkup([
     ["🌍 USDAMD", "🌍 USDAZN", "🌍 USDBDT"],
     ["🌍 USDBGN", "🌍 USDBHD", "🌍 USDBND"],
     ["🛠 Custom Analysis", "📡 Bot Status", "⚙️ Settings"],
-    ["📊 Synthetics", "⭐ 10/10 Signals", "📈 Daily Summary"]
+    ["📊 Synthetics", "⭐ 10/10 Signals", "📈 Daily Summary"],
+    ["🎯 Manual Execution Guide"]
 ], resize_keyboard=True)
 
 # Synthetics submenu
@@ -74,5 +75,24 @@ def get_risk_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("3%", callback_data="risk_3")
         ],
         [InlineKeyboardButton("🔙 Back", callback_data="settings_back")]
+    ])
+
+# Inline keyboard for manual execution guide
+def get_execution_guide_keyboard() -> InlineKeyboardMarkup:
+    """Get inline keyboard for manual execution guide options"""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📱 MT5 Setup", callback_data="exec_mt5_setup"),
+            InlineKeyboardButton("📊 Risk Calculator", callback_data="exec_risk_calc")
+        ],
+        [
+            InlineKeyboardButton("🎯 Entry Rules", callback_data="exec_entry_rules"),
+            InlineKeyboardButton("🚪 Exit Strategy", callback_data="exec_exit_strategy")
+        ],
+        [
+            InlineKeyboardButton("📈 Position Sizing", callback_data="exec_position_size"),
+            InlineKeyboardButton("⚡ Quick Guide", callback_data="exec_quick_guide")
+        ],
+        [InlineKeyboardButton("🔙 Back to Main", callback_data="exec_back_main")]
     ])
 

@@ -215,6 +215,200 @@ def compute_strategy_recommendation(
     return recommendation, confidence, reasons
 
 
+# Enhanced Technical Analysis Functions
+def calculate_rsi(data: pd.DataFrame, period: int = 14) -> float:
+    """Calculate RSI indicator"""
+    try:
+        if len(data) < period + 1:
+            return 50.0  # Neutral RSI
+
+        delta = data['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return float(rsi.iloc[-1])
+    except:
+        return 50.0
+
+def calculate_macd(data: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> tuple[float, float, float]:
+    """Calculate MACD indicator"""
+    try:
+        if len(data) < slow + signal:
+            return 0.0, 0.0, 0.0
+
+        fast_ema = data['Close'].ewm(span=fast, adjust=False).mean()
+        slow_ema = data['Close'].ewm(span=slow, adjust=False).mean()
+        macd = fast_ema - slow_ema
+        signal_line = macd.ewm(span=signal, adjust=False).mean()
+        histogram = macd - signal_line
+
+        return float(macd.iloc[-1]), float(signal_line.iloc[-1]), float(histogram.iloc[-1])
+    except:
+        return 0.0, 0.0, 0.0
+
+def calculate_bollinger_bands(data: pd.DataFrame, period: int = 20, std_dev: float = 2.0) -> tuple[float, float, float]:
+    """Calculate Bollinger Bands"""
+    try:
+        if len(data) < period:
+            return float(data['Close'].iloc[-1]), float(data['Close'].iloc[-1]), float(data['Close'].iloc[-1])
+
+        sma = data['Close'].rolling(window=period).mean()
+        std = data['Close'].rolling(window=period).std()
+        upper = sma + (std * std_dev)
+        lower = sma - (std * std_dev)
+
+        return float(upper.iloc[-1]), float(sma.iloc[-1]), float(lower.iloc[-1])
+    except:
+        current_price = float(data['Close'].iloc[-1])
+        return current_price, current_price, current_price
+
+def calculate_volume_analysis(data: pd.DataFrame) -> tuple[str, float]:
+    """Analyze volume patterns"""
+    try:
+        if 'Volume' not in data.columns or data['Volume'].isna().all():
+            return "Volume data unavailable", 1.0
+
+        avg_volume = data['Volume'].rolling(window=20).mean()
+        current_volume = data['Volume'].iloc[-1]
+        avg_vol = avg_volume.iloc[-1] if not pd.isna(avg_volume.iloc[-1]) else current_volume
+
+        if pd.isna(avg_vol) or avg_vol == 0:
+            return "Volume data unavailable", 1.0
+
+        volume_ratio = current_volume / avg_vol
+
+        if volume_ratio > 1.5:
+            return "High Volume 📈", volume_ratio
+        elif volume_ratio > 1.2:
+            return "Above Average 📊", volume_ratio
+        elif volume_ratio < 0.7:
+            return "Low Volume 📉", volume_ratio
+        else:
+            return "Normal Volume ➖", volume_ratio
+    except:
+        return "Volume analysis error", 1.0
+
+def analyze_multi_timeframe(data_15m: pd.DataFrame, data_1h: pd.DataFrame, data_4h: pd.DataFrame) -> str:
+    """Multi-timeframe analysis"""
+    try:
+        mtf_analysis = []
+
+        # 15M Trend
+        if len(data_15m) >= 20:
+            ema_20_15m = data_15m['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
+            current_15m = data_15m['Close'].iloc[-1]
+            if current_15m > ema_20_15m:
+                mtf_analysis.append("15M: Bullish")
+            else:
+                mtf_analysis.append("15M: Bearish")
+
+        # 1H Trend
+        if len(data_1h) >= 20:
+            ema_20_1h = data_1h['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
+            current_1h = data_1h['Close'].iloc[-1]
+            if current_1h > ema_20_1h:
+                mtf_analysis.append("1H: Bullish")
+            else:
+                mtf_analysis.append("1H: Bearish")
+
+        # 4H Trend
+        if len(data_4h) >= 20:
+            ema_20_4h = data_4h['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
+            current_4h = data_4h['Close'].iloc[-1]
+            if current_4h > ema_20_4h:
+                mtf_analysis.append("4H: Bullish")
+            else:
+                mtf_analysis.append("4H: Bearish")
+
+        return " | ".join(mtf_analysis) if mtf_analysis else "MTF analysis unavailable"
+    except:
+        return "MTF analysis error"
+
+def calculate_enhanced_risk_reward(entry_price: float, direction: str, data: pd.DataFrame) -> tuple[float, float, float, float]:
+    """Enhanced risk-reward calculation with dynamic targets"""
+    try:
+        current_price = float(data['Close'].iloc[-1])
+        atr_period = min(14, len(data))
+        high_low = data['High'] - data['Low']
+        high_close = (data['High'] - data['Close'].shift(1)).abs()
+        low_close = (data['Low'] - data['Close'].shift(1)).abs()
+        true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        atr = true_range.rolling(window=atr_period).mean().iloc[-1]
+
+        if pd.isna(atr) or atr == 0:
+            atr = abs(data['Close'].iloc[-1] * 0.005)  # 0.5% fallback
+
+        # Dynamic stop loss based on ATR
+        if direction == "BUY":
+            sl_distance = max(atr * 1.5, abs(current_price * 0.005))  # Min 0.5%
+            stop_loss = current_price - sl_distance
+            # Multiple take profit levels
+            tp1 = current_price + (sl_distance * 2)  # 2:1 RR
+            tp2 = current_price + (sl_distance * 3)  # 3:1 RR
+            tp3 = current_price + (sl_distance * 4)  # 4:1 RR
+        else:  # SELL
+            sl_distance = max(atr * 1.5, abs(current_price * 0.005))
+            stop_loss = current_price + sl_distance
+            tp1 = current_price - (sl_distance * 2)
+            tp2 = current_price - (sl_distance * 3)
+            tp3 = current_price - (sl_distance * 4)
+
+        risk_reward_ratio = sl_distance / (abs(tp1 - current_price)) if abs(tp1 - current_price) > 0 else 1.0
+
+        return stop_loss, tp1, tp2, risk_reward_ratio
+    except:
+        # Fallback calculation
+        risk_pct = 0.01  # 1% risk
+        if direction == "BUY":
+            stop_loss = current_price * (1 - risk_pct)
+            tp1 = current_price * (1 + risk_pct * 2)
+            tp2 = current_price * (1 + risk_pct * 3)
+        else:
+            stop_loss = current_price * (1 + risk_pct)
+            tp1 = current_price * (1 - risk_pct * 2)
+            tp2 = current_price * (1 - risk_pct * 3)
+        return stop_loss, tp1, tp2, 2.0
+
+def generate_manual_execution_guide(symbol: str, direction: str, entry_price: float, stop_loss: float, tp1: float, tp2: float, lot_size: float = 0.01) -> str:
+    """Generate step-by-step manual execution guide"""
+    guide = f"🎯 *MANUAL EXECUTION GUIDE*\n\n"
+    guide += f"📊 **Symbol:** {symbol}\n"
+    guide += f"📈 **Direction:** {direction}\n"
+    guide += f"💰 **Lot Size:** {lot_size}\n\n"
+
+    guide += "📋 **STEP-BY-STEP EXECUTION:**\n\n"
+
+    guide += "1️⃣ **Open MT5 Terminal**\n"
+    guide += f"   • Search for: {symbol}\n"
+    guide += f"   • Open {symbol} chart (M15 timeframe)\n\n"
+
+    guide += "2️⃣ **Place Market Order**\n"
+    guide += f"   • Click: {'BUY' if direction == 'BUY' else 'SELL'} button\n"
+    guide += f"   • Volume: {lot_size} lots\n\n"
+
+    guide += "3️⃣ **Set Stop Loss**\n"
+    guide += f"   • SL Price: {stop_loss:.5f}\n"
+    guide += f"   • Risk: {abs(entry_price - stop_loss) / entry_price * 100:.2f}%\n\n"
+
+    guide += "4️⃣ **Set Take Profit Levels**\n"
+    guide += f"   • TP1 (2:1 RR): {tp1:.5f}\n"
+    guide += f"   • TP2 (3:1 RR): {tp2:.5f}\n\n"
+
+    guide += "5️⃣ **Monitor Trade**\n"
+    guide += "   • Use trailing stop if price moves favorably\n"
+    guide += "   • Close 50% at TP1, let remaining run to TP2\n"
+    guide += "   • Never move SL against you\n\n"
+
+    guide += "⚠️ **RISK MANAGEMENT:**\n"
+    guide += "   • Never risk more than 1-2% per trade\n"
+    guide += "   • Maximum 3-5 open trades\n"
+    guide += "   • Use proper position sizing\n\n"
+
+    guide += "🔥 **PRO TIP:** Take partial profits at TP1 for better R:R!"
+
+    return guide
+
 def get_ai_prediction(symbol: str, data_summary: str, recommendation: str, confidence: int, reasons: list) -> tuple[str, int, bool]:
     """Get AI trade validation from Groq with enhanced analysis
     
@@ -457,6 +651,45 @@ def get_smc_prediction(symbol: str, filter_perfect: bool = False) -> str:
         else:
             msg += "\n"
 
+        # Enhanced Technical Analysis
+        msg += "📊 **ENHANCED TECHNICAL ANALYSIS**\n"
+
+        # RSI Analysis
+        rsi = calculate_rsi(data_15m)
+        rsi_status = "🟢 Oversold" if rsi < 30 else "🔴 Overbought" if rsi > 70 else "🟡 Neutral"
+        msg += f"RSI (14): {rsi:.1f} {rsi_status}\n"
+
+        # MACD Analysis
+        macd, macd_signal, macd_hist = calculate_macd(data_15m)
+        macd_trend = "🟢 Bullish" if macd > macd_signal else "🔴 Bearish" if macd < macd_signal else "🟡 Neutral"
+        msg += f"MACD: {macd_trend} ({macd_hist:+.5f})\n"
+
+        # Bollinger Bands
+        bb_upper, bb_middle, bb_lower = calculate_bollinger_bands(data_15m)
+        bb_position = ((current_price - bb_lower) / (bb_upper - bb_lower)) * 100 if bb_upper != bb_lower else 50
+        bb_status = "🔴 Lower Band" if bb_position < 20 else "🟢 Upper Band" if bb_position > 80 else "🟡 Middle"
+        msg += f"BB Position: {bb_position:.1f}% {bb_status}\n"
+
+        # Volume Analysis
+        vol_status, vol_ratio = calculate_volume_analysis(data_15m)
+        msg += f"Volume: {vol_status} ({vol_ratio:.1f}x avg)\n"
+
+        # Multi-timeframe Analysis
+        mtf_analysis = analyze_multi_timeframe(data_15m, htf_data, htf_data)  # Using htf_data for both 1H and 4H for now
+        msg += f"Multi-TF: {mtf_analysis}\n\n"
+
+        # Enhanced Risk Management
+        if fvg:
+            entry_price = (float(fvg['fvg_low']) + float(fvg['fvg_high'])) / 2
+            stop_loss, tp1, tp2, rr_ratio = calculate_enhanced_risk_reward(entry_price, recommendation, data_15m)
+
+            msg += "🎯 **ENHANCED RISK MANAGEMENT**\n"
+            msg += f"Entry: {entry_price:.5f}\n"
+            msg += f"Stop Loss: {stop_loss:.5f} ({abs(entry_price - stop_loss) / entry_price * 100:.2f}% risk)\n"
+            msg += f"Take Profit 1 (2:1): {tp1:.5f}\n"
+            msg += f"Take Profit 2 (3:1): {tp2:.5f}\n"
+            msg += f"Risk:Reward: {rr_ratio:.1f}:1\n\n"
+
         # AI Commentary
         commentary = get_ai_commentary(symbol, recommendation, strat_confidence, strat_reasons)
         msg += f"💬 *AI Commentary:* {commentary}\n\n"
@@ -494,7 +727,11 @@ def get_smc_prediction(symbol: str, filter_perfect: bool = False) -> str:
             msg += f"▶️ Entry (50% FVG): {entry:.5f}\n"
             msg += f"🚫 Stop Loss: {sl:.5f}\n"
             msg += f"🎯 Take Profit (1:2): {tp_2r:.5f}\n"
-            msg += f"📝 Best executed during Kill Zone with price retracing into FVG.\n"
+            msg += f"📝 Best executed during Kill Zone with price retracing into FVG.\n\n"
+
+            # Manual Execution Guide
+            execution_guide = generate_manual_execution_guide(symbol, recommendation, entry_price, stop_loss, tp1, tp2)
+            msg += execution_guide
             
             # Get AI Trade Validation
             ohlc_text = format_last_candles_ohlc(data_15m, n=30)

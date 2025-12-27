@@ -172,6 +172,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             summary, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu
         )
 
+    elif text == "🎯 Manual Execution Guide":
+        guide_msg = (
+            "🎯 *MANUAL EXECUTION GUIDE*\n\n"
+            "Learn how to execute trades manually for maximum control!\n\n"
+            "Choose a topic:"
+        )
+        from menus import get_execution_guide_keyboard
+        await update.message.reply_text(
+            guide_msg, parse_mode=ParseMode.MARKDOWN,
+            reply_markup=get_execution_guide_keyboard()
+        )
+
     elif text == "⚙️ Settings":
         martingale = get_user_pref(user_id, "martingale_enabled", 0)
         risk = get_user_pref(user_id, "risk_percent", 1.0)
@@ -343,6 +355,150 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         symbol = data.split("_", 1)[1]
         # Add to favorites logic here
         await query.edit_message_text(f"⭐ {symbol} added to favorites")
+
+    # Manual Execution Guide handlers
+    elif data == "exec_mt5_setup":
+        mt5_msg = (
+            "📱 *MT5 TERMINAL SETUP GUIDE*\n\n"
+            "1️⃣ **Download & Install**\n"
+            "   • Visit: https://www.metatrader5.com/en/download\n"
+            "   • Choose your broker (Deriv, IC Markets, etc.)\n\n"
+            "2️⃣ **Login Process**\n"
+            "   • Open MT5 → File → Login to Trade Account\n"
+            "   • Enter your account details\n\n"
+            "3️⃣ **Chart Setup**\n"
+            "   • Add indicators: EMA(200), RSI(14), MACD\n"
+            "   • Set timeframe to M15 for scalping\n\n"
+            "4️⃣ **Practice First**\n"
+            "   • Use demo account before live trading\n"
+            "   • Paper trade for confidence\n\n"
+            "⚠️ *Important:* Never risk more than 1-2% per trade!"
+        )
+        await query.edit_message_text(mt5_msg, parse_mode=ParseMode.MARKDOWN)
+
+    elif data == "exec_risk_calc":
+        risk_msg = (
+            "📊 *RISK CALCULATOR*\n\n"
+            "Formula: Risk Amount = Account × Risk %\n\n"
+            "**Example:**\n"
+            "Account: $1000\n"
+            "Risk: 1% = $10 per trade\n"
+            "Risk: 2% = $20 per trade\n\n"
+            "**Position Sizing:**\n"
+            "Lot Size = Risk Amount ÷ (Stop Loss × Pip Value)\n\n"
+            "**Pip Value Examples:**\n"
+            "• EURUSD: $10 per pip (0.1 lots)\n"
+            "• GBPUSD: $10 per pip (0.1 lots)\n"
+            "• Gold: $100 per pip (0.01 lots)\n\n"
+            "🛡️ *Risk Management Rules:*\n"
+            "• Max 1-2% per trade\n"
+            "• Max 5-10% total daily risk\n"
+            "• Use proper position sizing"
+        )
+        await query.edit_message_text(risk_msg, parse_mode=ParseMode.MARKDOWN)
+
+    elif data == "exec_entry_rules":
+        entry_msg = (
+            "🎯 *TRADE ENTRY RULES*\n\n"
+            "✅ **WHEN TO ENTER:**\n\n"
+            "1️⃣ **FVG Retest**\n"
+            "   • Wait for price to retest FVG area\n"
+            "   • Enter on rejection candle\n\n"
+            "2️⃣ **Kill Zone Timing**\n"
+            "   • London: 2-5 AM EST\n"
+            "   • New York: 8:30-11 AM EST\n\n"
+            "3️⃣ **Confluence Factors**\n"
+            "   • EMA200 alignment\n"
+            "   • Market structure\n"
+            "   • RSI divergence\n\n"
+            "4️⃣ **Entry Triggers**\n"
+            "   • Pin bar rejection\n"
+            "   • Engulfing pattern\n"
+            "   • RSI oversold/overbought\n\n"
+            "🚫 **WHEN NOT TO ENTER:**\n"
+            "• Against major trend\n"
+            "• High impact news\n"
+            "• Outside Kill Zone\n"
+            "• No confluence"
+        )
+        await query.edit_message_text(entry_msg, parse_mode=ParseMode.MARKDOWN)
+
+    elif data == "exec_exit_strategy":
+        exit_msg = (
+            "🚪 *TRADE EXIT STRATEGY*\n\n"
+            "🎯 **TAKE PROFIT LEVELS:**\n\n"
+            "1️⃣ **TP1 (2:1 RR)**\n"
+            "   • Minimum target\n"
+            "   • Close 50% position here\n\n"
+            "2️⃣ **TP2 (3:1 RR)**\n"
+            "   • Extended target\n"
+            "   • Let remaining run\n\n"
+            "3️⃣ **TP3 (4:1 RR)**\n"
+            "   • Home run target\n"
+            "   • Rare but possible\n\n"
+            "🛑 **STOP LOSS RULES:**\n\n"
+            "• Place at FVG boundary\n"
+            "• Use ATR for calculation\n"
+            "• Never move SL against you\n"
+            "• Use trailing stops on winners\n\n"
+            "📈 **EXIT SIGNALS:**\n"
+            "• Price hits TP level\n"
+            "• Opposite FVG forms\n"
+            "• Structure breaks\n"
+            "• Time-based exit (4H max)"
+        )
+        await query.edit_message_text(exit_msg, parse_mode=ParseMode.MARKDOWN)
+
+    elif data == "exec_position_size":
+        size_msg = (
+            "📈 *POSITION SIZING GUIDE*\n\n"
+            "**Formula:**\n"
+            "Lot Size = (Risk Amount) ÷ (Stop Loss × Pip Value)\n\n"
+            "**Examples:**\n\n"
+            "📊 **$100 Risk, 50 Pip SL:**\n"
+            "EURUSD: 100 ÷ (50 × 10) = 0.02 lots\n"
+            "GBPUSD: 100 ÷ (50 × 10) = 0.02 lots\n"
+            "Gold: 100 ÷ (50 × 100) = 0.002 lots\n\n"
+            "📊 **$500 Risk, 30 Pip SL:**\n"
+            "EURUSD: 500 ÷ (30 × 10) = 0.17 lots\n"
+            "GBPUSD: 500 ÷ (30 × 10) = 0.17 lots\n"
+            "Gold: 500 ÷ (30 × 100) = 0.017 lots\n\n"
+            "🎯 **Pro Tips:**\n"
+            "• Start small (0.01 lots)\n"
+            "• Increase as confidence grows\n"
+            "• Never exceed 1-2% risk per trade\n"
+            "• Adjust for account size"
+        )
+        await query.edit_message_text(size_msg, parse_mode=ParseMode.MARKDOWN)
+
+    elif data == "exec_quick_guide":
+        quick_msg = (
+            "⚡ *5-MINUTE EXECUTION GUIDE*\n\n"
+            "1️⃣ **Get Signal**\n"
+            "   • Check bot for 10/10 signals\n\n"
+            "2️⃣ **Verify Setup**\n"
+            "   • Confirm FVG on M15\n"
+            "   • Check EMA200 alignment\n"
+            "   • Ensure Kill Zone timing\n\n"
+            "3️⃣ **Calculate Position**\n"
+            "   • Risk: 1% of account\n"
+            "   • Use risk calculator\n\n"
+            "4️⃣ **Enter Trade**\n"
+            "   • Market order at FVG retest\n"
+            "   • Set SL and TP levels\n\n"
+            "5️⃣ **Monitor & Exit**\n"
+            "   • Partial exit at 2:1 RR\n"
+            "   • Trail stop on winners\n\n"
+            "🔑 **Key Success Factors:**\n"
+            "• Patience (wait for setup)\n"
+            "• Discipline (follow rules)\n"
+            "• Risk management (never guess)\n"
+            "• Consistency (same process every trade)"
+        )
+        await query.edit_message_text(quick_msg, parse_mode=ParseMode.MARKDOWN)
+
+    elif data == "exec_back_main":
+        await query.edit_message_text("Returning to main menu...", reply_markup=main_menu)
 
 
 async def check_strong_signals(application: Application):
