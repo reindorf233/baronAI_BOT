@@ -3,7 +3,7 @@ services:
     name: baron-ai-bot
     runtime: python3
     buildCommand: pip install -r requirements.txt
-    startCommand: python main.py --webhook
+    startCommand: python app.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
@@ -12,8 +12,15 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: WEBHOOK_MODE
-        value: false
+        value: true
+      - key: WEBHOOK_URL
+        fromService:
+          type: web
+          property: host
+          value: https://${self.host}
+      - key: PORT
+        fromService:
+          type: web
+          property: port
       - key: USER_TIMEZONE
         value: Africa/Accra
-      - key: ON_RENDER
-        value: true
