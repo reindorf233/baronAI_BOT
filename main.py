@@ -54,7 +54,21 @@ def main():
     
     # Initialize database
     init_db()
-    
+
+    # Check for Railway environment
+    on_railway = (os.getenv('RAILWAY_ENVIRONMENT') or
+                  os.getenv('RAILWAY_PROJECT_ID') or
+                  os.getenv('RAILWAY_STATIC_URL'))
+
+    logging.info("=" * 60)
+    logging.info("BARON AI TRADING BOT STARTUP")
+    logging.info("=" * 60)
+    logging.info(f"On Railway: {bool(on_railway)}")
+    logging.info(f"Railway Environment: {os.getenv('RAILWAY_ENVIRONMENT')}")
+    logging.info(f"Railway Project ID: {os.getenv('RAILWAY_PROJECT_ID')}")
+    logging.info("Using POLLING MODE for Railway compatibility")
+    logging.info("=" * 60)
+
     # Acquire file lock to prevent multiple instances (unless skipped)
     if not args.skip_lock:
         if not acquire_lock():
