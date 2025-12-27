@@ -160,7 +160,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg = (
                     "⭐ *10/10 Signals Found*\n\n"
                     f"Found {len(perfect_signals)} perfect signals, but none are AI-approved yet.\n"
-                    "AI is analyzing for maximum safety..."
+                    "⚡ AI analyzing FAST for maximum safety..."
                 )
             await update.message.reply_text(
                 msg, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu
