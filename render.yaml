@@ -19,3 +19,5 @@ services:
           property: port
       - key: USER_TIMEZONE
         value: Africa/Accra
+      - key: ON_RENDER
+        value: true

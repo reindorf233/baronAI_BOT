@@ -88,11 +88,25 @@ def main():
     if args.webhook or WEBHOOK_MODE:
         webhook_url = args.url or WEBHOOK_URL
         port = args.port or PORT
-        
+
+        # For Render deployment, construct webhook URL from environment
         if not webhook_url:
-            logging.error("Webhook URL required for webhook mode")
-            logging.error("Set WEBHOOK_URL environment variable or use --url")
-            sys.exit(1)
+            # Render provides the service URL via RENDER_EXTERNAL_URL
+            render_url = os.getenv("RENDER_EXTERNAL_URL")
+            if render_url:
+                webhook_url = render_url
+                logging.info(f"Using Render service URL: {webhook_url}")
+            else:
+                # Fallback: construct from ON_RENDER and service name
+                on_render = os.getenv("ON_RENDER", "").lower() == "true"
+                service_name = os.getenv("RENDER_SERVICE_NAME", "baron-ai-bot")
+                if on_render:
+                    webhook_url = f"https://{service_name}.onrender.com"
+                    logging.info(f"Constructed webhook URL from service name: {webhook_url}")
+                else:
+                    logging.error("Webhook URL required for webhook mode")
+                    logging.error("Set WEBHOOK_URL environment variable or deploy on Render")
+                    sys.exit(1)
         
         logging.info(f"Starting webhook mode on port {port}")
         logging.info(f"Webhook URL: {webhook_url}")
