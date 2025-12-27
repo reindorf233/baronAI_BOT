@@ -227,60 +227,39 @@ def get_ai_prediction(symbol: str, data_summary: str, recommendation: str, confi
     try:
         client = Groq(api_key=GROQ_API_KEY)
         
-        # Enhanced prompt with more context
-        prompt = f"""You are an expert ICT/SMC (Inner Circle Trader/Smart Money Concepts) analyst. Analyze this trading setup:
+        # FAST AI APPROVAL - Optimized for speed
+        prompt = f"""FAST ICT/SMC Analysis:
 
 SYMBOL: {symbol}
-STRATEGY RECOMMENDATION: {recommendation}
-STRATEGY CONFIDENCE: {confidence}/10
-KEY REASONS: {', '.join(reasons[:5])}
+RECOMMENDATION: {recommendation}
+CONFIDENCE: {confidence}/10
+KEY FACTORS: {', '.join(reasons[:3])}
 
-MARKET DATA:
-{data_summary}
+DATA SUMMARY: {data_summary[:200]}...
 
-ANALYSIS REQUIREMENTS:
-1. Evaluate if the {recommendation} recommendation aligns with:
-   - Market structure (bullish/bearish bias)
-   - Higher timeframe trend (EMA200)
-   - Fair Value Gap (FVG) if present
-   - Kill Zone timing
-   - Risk/reward ratio
+QUICK DECISION:
+- Market structure alignment?
+- EMA200 trend confirmation?
+- Risk/reward ratio good?
+- Kill Zone timing?
 
-2. Check for confluence factors:
-   - Multiple confirmations (structure + FVG + EMA alignment)
-   - Kill Zone timing (London 2-5 AM EST or NY 8:30-11 AM EST)
-   - Market structure shifts (MSS)
-   - Price action quality
+Score: X/10
+Approval: YES/NO (YES only for 7+/10 with strong confluence)
+Reason: [1 sentence]"""
 
-3. Assess risk factors:
-   - Stop loss distance
-   - Take profit targets
-   - Current volatility
-   - Market session timing
-
-4. Provide your assessment:
-   - Confidence Score: X/10 (where X is 1-10)
-   - Approval: YES or NO
-   - Brief reasoning (2-3 sentences)
-
-CRITICAL: Only approve trades (7+/10) if there is STRONG confluence. Be conservative.
-
-Format your response EXACTLY as:
-Confidence Score: X/10
-Approval: YES/NO
-Reasoning: [Your 2-3 sentence analysis explaining why this trade is approved or rejected]"""
-
+        # FAST MODEL - Optimized for speed
         response = client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            model="llama-3.1-8b-instant",  # FASTER MODEL
             messages=[
                 {
-                    "role": "system", 
-                    "content": "You are a professional ICT/SMC trading expert with 15+ years of experience. You analyze trades conservatively and only approve high-probability setups with strong confluence. You understand Fair Value Gaps, Market Structure Shifts, Order Blocks, and Kill Zone timing."
+                    "role": "system",
+                    "content": "You are an expert ICT/SMC trader. Give fast, decisive YES/NO approvals. Be quick and conservative."
                 },
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=300,
-            temperature=0.2  # Lower temperature for more consistent analysis
+            max_tokens=80,  # SHORTER RESPONSE
+            temperature=0.1,  # MORE CONSISTENT
+            timeout=10  # ADD TIMEOUT FOR SPEED
         )
         
         ai_response = response.choices[0].message.content
