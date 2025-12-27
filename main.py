@@ -133,34 +133,49 @@ def main():
         logging.info(f"Starting webhook mode on port {port}")
         logging.info(f"Webhook URL: {webhook_url}")
         
-        # Webhook mode uses async - handle event loop properly
-        async def run_webhook():
+        # For Render deployment, use polling instead of webhook to avoid event loop conflicts
+        on_render = (os.getenv("ON_RENDER", "").lower() == "true" or
+                    os.getenv("RENDER") == "true" or
+                    "render" in os.getenv("PATH", "").lower())
+
+        if on_render:
+            logging.info("Running on Render - using polling mode instead of webhook")
+            # Use polling mode for Render (simpler, no event loop issues)
             try:
-                await app.bot.set_webhook(webhook_url)
-                logging.info("Webhook set successfully")
-                await app.run_webhook(
-                    listen="0.0.0.0",
-                    port=port,
-                    webhook_url=webhook_url,
-                    drop_pending_updates=True
+                app.run_polling(
+                    drop_pending_updates=True,
+                    allowed_updates=["message", "callback_query"]
                 )
             except Exception as e:
-                logging.error(f"Webhook setup failed: {e}")
-                import traceback
-                traceback.print_exc()
+                logging.error(f"Polling failed: {e}")
                 sys.exit(1)
+        else:
+            # Webhook mode for other deployments
+            async def run_webhook():
+                try:
+                    await app.bot.set_webhook(webhook_url)
+                    logging.info("Webhook set successfully")
+                    await app.run_webhook(
+                        listen="0.0.0.0",
+                        port=port,
+                        webhook_url=webhook_url,
+                        drop_pending_updates=True
+                    )
+                except Exception as e:
+                    logging.error(f"Webhook setup failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    sys.exit(1)
 
-        # Handle event loop for Render deployment
-        try:
-            # Check if there's already a running event loop (Render environment)
-            loop = asyncio.get_running_loop()
-            logging.info("Event loop already running (Render), creating task")
-            # Create task in existing event loop
-            asyncio.create_task(run_webhook())
-        except RuntimeError:
-            # No event loop running, create one
-            logging.info("No event loop running, starting new one")
-            asyncio.run(run_webhook())
+            # Handle event loop
+            try:
+                loop = asyncio.get_running_loop()
+                logging.warning("Event loop already running, using nest_asyncio")
+                import nest_asyncio
+                nest_asyncio.apply()
+                asyncio.run(run_webhook())
+            except RuntimeError:
+                asyncio.run(run_webhook())
     else:
         logging.info("Starting polling mode")
         logging.info("For production, use --webhook with WEBHOOK_URL set")
