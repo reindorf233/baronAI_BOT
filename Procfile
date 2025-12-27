@@ -1,2 +1,1 @@
-web: python bot.py
-auto_redeploy: true
+web: python main.py --webhook

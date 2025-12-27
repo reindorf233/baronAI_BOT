@@ -9,7 +9,10 @@ import asyncio
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from groq import Groq
-import MetaTrader5 as mt5
+try:
+    import MetaTrader5 as mt5
+except Exception:
+    mt5 = None
 
 # === CONFIGURATION ===
 USER_TIMEZONE = "Africa/Accra"  # Ghana timezone
@@ -20,9 +23,13 @@ AI_APPROVAL_MIN_SCORE = 7
 # Signal monitoring settings
 MONITORING_ENABLED = True
 MIN_SIGNAL_CONFIDENCE = 8  # Only send alerts for 8/10+ confidence
+PERFECT_SIGNAL_ENABLED = True  # Send instant alerts for 10/10 + AI Approved
 MONITORED_SYMBOLS = ["GC=F", "XAUUSD", "EURUSD=X", "GBPUSD=X", "BTC-USD"]  # Key symbols to monitor
 LAST_SIGNALS = {}  # Track last signals to avoid duplicates
+LAST_PERFECT_SIGNALS = {}  # Track last perfect signals separately
 SIGNAL_COOLDOWN_MINUTES = 30  # Wait 30 minutes before sending same signal again
+PERFECT_SIGNAL_COOLDOWN_MINUTES = 10  # Shorter cooldown for perfect signals
+PERFECT_SIGNAL_USERS = set()  # Users who want instant perfect signal notifications
 
 MT5_LOGIN = os.getenv("MT5_LOGIN", "")
 MT5_PASSWORD = os.getenv("MT5_PASSWORD", "")
@@ -32,8 +39,7 @@ MT5_SERVER = os.getenv("MT5_SERVER", "")
 IS_RENDER = os.getenv("RENDER", "") != ""
 
 # Only use MT5 if not on Render and credentials are provided
-USE_MT5_FIRST = not IS_RENDER and all([MT5_LOGIN, MT5_PASSWORD, MT5_SERVER])
-
+USE_MT5_FIRST = (mt5 is not None) and (not IS_RENDER) and all([MT5_LOGIN, MT5_PASSWORD, MT5_SERVER])
 
 def format_last_candles_ohlc(df: pd.DataFrame, n: int = 30) -> str:
     try:
@@ -124,6 +130,8 @@ def compute_strategy_recommendation(
 
 
 def _mt5_timeframe(tf: str):
+    if mt5 is None:
+        raise ValueError("MetaTrader5 is not available")
     tf = tf.upper()
     if tf in ("15M", "M15"):
         return mt5.TIMEFRAME_M15
@@ -133,6 +141,8 @@ def _mt5_timeframe(tf: str):
 
 
 def mt5_connect() -> bool:
+    if mt5 is None:
+        return False
     if mt5.terminal_info() is not None and mt5.account_info() is not None:
         return True
     if not mt5.initialize():
@@ -147,6 +157,8 @@ def mt5_connect() -> bool:
 
 
 def fetch_candles_mt5(symbol: str, timeframe: str, bars: int) -> pd.DataFrame:
+    if mt5 is None:
+        return pd.DataFrame()
     if not mt5_connect():
         return pd.DataFrame()
 
@@ -329,7 +341,7 @@ def parse_gemini_confidence_score(ai_text: str):
             return None
     return None
 
-async def check_strong_signals(application):
+async def send_perfect_signal_alert(application, symbol, analysis, user_id):
     """Monitor for strong signals and send alerts"""
     if not MONITORING_ENABLED:
         return
@@ -367,9 +379,9 @@ async def check_strong_signals(application):
                         # Create alert message
                         alert_msg = f"""🚨 **STRONG SIGNAL ALERT** 🚨
 
-📊 **{symbol}**
+ **{symbol}**
 ▶️ **{recommendation}**
-📌 **Confidence: {confidence}/10**
+ **Confidence: {confidence}/10**
 🤖 **AI: {ai_approval}**
 🕐 **{current_time.strftime('%H:%M')} EST**
 
@@ -410,7 +422,7 @@ async def alerts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         for symbol, time in LAST_SIGNALS.items():
             time_str = time.strftime('%H:%M')
-            msg += f"📊 {symbol} - {time_str} EST\n"
+            msg += f" {symbol} - {time_str} EST\n"
     
     msg += "\n⚙️ Monitoring runs automatically every 5 minutes"
     await update.message.reply_text(msg, parse_mode='Markdown')
@@ -422,8 +434,8 @@ async def toggle_monitoring(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = "ON" if MONITORING_ENABLED else "OFF"
     
     msg = f"🔧 **Signal Monitoring: {status}**\n\n"
-    msg += f"📊 Monitoring {len(MONITORED_SYMBOLS)} symbols\n"
-    msg += f"📌 Min confidence: {MIN_SIGNAL_CONFIDENCE}/10\n"
+    msg += f" Monitoring {len(MONITORED_SYMBOLS)} symbols\n"
+    msg += f" Min confidence: {MIN_SIGNAL_CONFIDENCE}/10\n"
     msg += f"⏰ Cooldown: {SIGNAL_COOLDOWN_MINUTES} minutes"
     
     await update.message.reply_text(msg, parse_mode='Markdown')
@@ -587,12 +599,12 @@ def get_smc_prediction(symbol: str):
         msg += f"🕐 Your Time: {now_user.strftime('%Y-%m-%d %H:%M %Z')}\n"
         msg += f"💹 Current Price: {current_price:.5f}\n"
         msg += f"📈 HTF Bias (EMA200): {htf_bias}\n"
-        msg += f"📊 Market Structure: {structure}\n"
+        msg += f" Market Structure: {structure}\n"
         msg += f"⏰ Session: {kz_status}\n\n"
 
         msg += "🧠 **STRATEGY ENGINE**\n"
         msg += f"▶️ Recommendation: **{recommendation}**\n"
-        msg += f"📌 Strategy Confidence: {strat_confidence}/10\n"
+        msg += f" Strategy Confidence: {strat_confidence}/10\n"
         if strat_reasons:
             msg += f"🧾 Reasons: {', '.join(strat_reasons)}\n\n"
         else:
@@ -626,7 +638,7 @@ def get_smc_prediction(symbol: str):
             else:
                 msg += "\n"
 
-            msg += f"📊 FVG Range: {float(fvg['fvg_low']):.5f} – {float(fvg['fvg_high']):.5f}\n"
+            msg += f" FVG Range: {float(fvg['fvg_low']):.5f} – {float(fvg['fvg_high']):.5f}\n"
             msg += f"🕐 FVG Formed: {fvg['candle_time'].strftime('%Y-%m-%d %H:%M')} EST\n"
             msg += f"▶️ Entry (50% FVG): {entry:.5f}\n"
             msg += f"🚫 Stop Loss: {sl:.5f}\n"
@@ -842,11 +854,13 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     print("ICT/SMC Trading Bot is starting...")
-    print(f"📊 Monitoring {len(MONITORED_SYMBOLS)} symbols for strong signals...")
-    print(f"📌 Min confidence: {MIN_SIGNAL_CONFIDENCE}/10")
+    print(f" Monitoring {len(MONITORED_SYMBOLS)} symbols for strong signals...")
+    print(f" Min confidence: {MIN_SIGNAL_CONFIDENCE}/10")
     
     # Start monitoring in background
-    asyncio.create_task(start_monitoring(app))
+    import threading
+    monitor_thread = threading.Thread(target=lambda: asyncio.run(start_monitoring(app)), daemon=True)
+    monitor_thread.start()
     
     app.run_polling()
 
