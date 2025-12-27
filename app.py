@@ -127,43 +127,59 @@ if __name__ == '__main__':
     # Create bot application
     create_bot_app()
 
-    # Always use webhook mode for production (Render deployment)
-    # Check if we're on Render or have webhook configuration
+    # Determine mode and handle conflicts
     on_render = (os.getenv('RENDER') == 'true' or
                 os.getenv('ON_RENDER', '').lower() == 'true' or
                 os.getenv('WEBHOOK_MODE', '').lower() == 'true')
 
     webhook_url = os.getenv('WEBHOOK_URL')
 
+    logging.info("=" * 50)
+    logging.info("BARON AI BOT STARTUP DIAGNOSTIC")
+    logging.info("=" * 50)
+    logging.info(f"ON_RENDER: {on_render}")
+    logging.info(f"WEBHOOK_URL: {webhook_url}")
+    logging.info(f"WEBHOOK_MODE: {os.getenv('WEBHOOK_MODE')}")
+
     if on_render or webhook_url:
-        # Force webhook mode for production
+        # PRODUCTION: Webhook mode only
+        logging.info("🚀 PRODUCTION MODE: Using webhook only")
+
         if not webhook_url:
-            # Try to construct webhook URL for Render
             service_name = os.getenv('RENDER_SERVICE_NAME', 'baron-ai-bot')
             webhook_url = f"https://{service_name}.onrender.com"
             logging.info(f"Constructed webhook URL: {webhook_url}")
 
-        logging.info(f"Starting Flask server with webhook mode")
-        logging.info(f"Webhook URL: {webhook_url}")
+        logging.info(f"Starting Flask server with webhook: {webhook_url}")
 
-        # Set webhook synchronously before starting Flask
+        # Clear any existing webhook/polling conflicts
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            # Delete webhook first to clear any conflicts
+            loop.run_until_complete(bot_app.bot.delete_webhook())
+            logging.info("Cleared existing webhook")
+            # Set new webhook
             loop.run_until_complete(bot_app.bot.set_webhook(webhook_url))
-            loop.close()
             logging.info("Webhook set successfully")
+            loop.close()
         except Exception as e:
-            logging.error(f"Failed to set webhook: {e}")
-            # Continue anyway - webhook might already be set
+            logging.error(f"Webhook setup issue: {e}")
+            # Continue anyway
 
         # Start Flask server
         port = int(os.getenv('PORT', 10000))
-        logging.info(f"Starting Flask on port {port}")
-        app.run(host='0.0.0.0', port=port, debug=False)
+        logging.info(f"Flask server starting on port {port}")
+        logging.info("Bot ready for webhook requests!")
+        logging.info("=" * 50)
+
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
 
     else:
-        # Local development - polling mode
-        logging.warning("No webhook configuration found - using polling mode")
-        logging.warning("This is for local development only!")
+        # LOCAL DEVELOPMENT: Polling mode
+        logging.warning("🔧 LOCAL DEVELOPMENT MODE: Using polling")
+        logging.warning("This should NOT be used in production!")
+        logging.warning("Set WEBHOOK_MODE=true for production")
+        logging.info("=" * 50)
+
         run_bot_polling()
