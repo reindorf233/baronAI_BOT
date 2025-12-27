@@ -152,15 +152,14 @@ def main():
 
         # Handle event loop for Render deployment
         try:
-            # Check if there's already a running event loop
+            # Check if there's already a running event loop (Render environment)
             loop = asyncio.get_running_loop()
-            logging.warning("Event loop already running, using existing loop")
-            # If loop exists, we need to run differently
-            import nest_asyncio
-            nest_asyncio.apply()
-            asyncio.run(run_webhook())
+            logging.info("Event loop already running (Render), creating task")
+            # Create task in existing event loop
+            asyncio.create_task(run_webhook())
         except RuntimeError:
-            # No event loop running, safe to use asyncio.run()
+            # No event loop running, create one
+            logging.info("No event loop running, starting new one")
             asyncio.run(run_webhook())
     else:
         logging.info("Starting polling mode")
