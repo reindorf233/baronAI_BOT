@@ -476,32 +476,99 @@ async def handle_deriv_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("❌ An error occurred. Please try again.")
 
 async def handle_deriv_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages for Deriv symbols"""
-    text = update.message.text.strip().upper()
-    
-    # Check if it's a valid Deriv symbol
-    if is_deriv_symbol(text):
+    """Handle text messages for Deriv symbols and menu buttons"""
+    text = update.message.text.strip()
+    text_upper = text.upper()
+
+    # Menu button mappings - map menu text to symbols
+    menu_mappings = {
+        # Main menu direct symbols
+        "📈 VOLATILITY 10": "R_10",
+        "📈 VOLATILITY 25": "R_25",
+        "📈 VOLATILITY 50": "R_50",
+        "📈 VOLATILITY 75": "R_75",
+        "📈 VOLATILITY 100": "R_100",
+        "💥 BOOM 1000": "BOOM1000",
+        "💥 CRASH 1000": "CRASH1000",
+        "👣 STEP INDEX": "STEP INDEX",
+
+        # Direct symbol mappings
+        "📈 R_10": "R_10",
+        "📈 R_25": "R_25",
+        "📈 R_50": "R_50",
+        "📈 R_75": "R_75",
+        "📈 R_100": "R_100",
+        "💥 BOOM 1000": "BOOM1000",
+        "💥 CRASH 1000": "CRASH1000",
+        "🚀 JUMP 10": "JUMP10",
+        "🚀 JUMP 25": "JUMP25",
+        "🚀 JUMP 50": "JUMP50",
+        "🚀 JUMP 75": "JUMP75",
+        "🚀 JUMP 100": "JUMP100",
+
+        # Menu navigation
+        "🔙 BACK TO MAIN MENU": "menu_main",
+    }
+
+    # Check if it's a menu button
+    if text in menu_mappings:
+        mapped_value = menu_mappings[text]
+
+        # Handle direct symbol mapping
+        if mapped_value in ["R_10", "R_25", "R_50", "R_75", "R_100", "BOOM1000", "CRASH1000", "JUMP10", "JUMP25", "JUMP50", "JUMP75", "JUMP100", "STEP INDEX"]:
+            symbol = mapped_value
+            await update.message.reply_text("🔄 Analyzing...")
+
+            signal_data = await get_deriv_signal(symbol, '15m')
+            message = format_deriv_signal(signal_data)
+
+            await update.message.reply_text(
+                message,
+                reply_markup=get_signal_actions_keyboard(symbol, '15m'),
+                parse_mode='Markdown'
+            )
+            return
+
+        # Handle menu navigation
+        elif mapped_value == "menu_main":
+            from deriv_menus import deriv_main_menu
+            await update.message.reply_text(
+                "🎯 **DERIV SYNTHETIC INDICES BOT**\n\n"
+                "Click any asset button below to get instant professional trading signals!",
+                reply_markup=deriv_main_menu,
+                parse_mode='Markdown'
+            )
+            return
+
+    # Check if it's a valid Deriv symbol (direct text input)
+    if is_deriv_symbol(text_upper):
         await update.message.reply_text("🔄 Analyzing...")
-        
-        signal_data = await get_deriv_signal(text, '15m')
+
+        signal_data = await get_deriv_signal(text_upper, '15m')
         message = format_deriv_signal(signal_data)
-        
+
         await update.message.reply_text(
             message,
-            reply_markup=get_signal_actions_keyboard(text, '15m'),
+            reply_markup=get_signal_actions_keyboard(text_upper, '15m'),
             parse_mode='Markdown'
         )
     else:
-        # Show help
+        # Show help with menu
+        help_msg = """
+🚀 **DERIV SYNTHETIC INDICES BOT**
+
+Click any button below to get instant professional trading signals!
+
+**Available Assets:**
+📈 **Volatility**: R_10, R_25, R_50, R_75, R_100
+💥 **Boom & Crash**: BOOM1000, CRASH1000
+🚀 **Jump**: JUMP10-100
+👣 **Step Index**
+
+💡 **Tip**: Click any asset to get immediate analysis!
+"""
         await update.message.reply_text(
-            "📈 **DERIV SYNTHETIC INDICES BOT**\n\n"
-            "Send a valid Deriv symbol (e.g., R_50, BOOM1000) or use the menu.\n\n"
-            "**Valid symbols**:\n"
-            "• R_10, R_25, R_50, R_75, R_100 (Volatility)\n"
-            "• BOOM1000, CRASH1000 (Boom & Crash)\n"
-            "• STEP INDEX\n"
-            "• JUMP10, JUMP25, JUMP50, JUMP75, JUMP100\n\n"
-            "Use /start to see the main menu.",
+            help_msg,
             reply_markup=deriv_main_menu,
             parse_mode='Markdown'
         )
