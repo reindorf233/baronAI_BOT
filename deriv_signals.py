@@ -21,58 +21,75 @@ from groq import Groq
 async def get_deriv_signal(symbol: str, timeframe: str = "15m") -> Dict:
     """
     Get comprehensive signal analysis for Deriv synthetic indices
-    
+
     Args:
         symbol: Deriv symbol (e.g., 'R_50', 'BOOM1000')
         timeframe: Timeframe for analysis
-    
+
     Returns:
         Dictionary with signal analysis
     """
     try:
         symbol = normalize_symbol(symbol)
-        
-        # Fetch candle data
+
+        # Fetch candle data with retry
         df = await get_deriv_candles(symbol, timeframe, 100)
         if df.empty:
-            return {
-                "error": f"No data available for {symbol}",
-                "signal": "neutral",
-                "confidence": 0
-            }
-        
-        # Perform breakout analysis
-        breakout_analysis = detect_breakout_retest(df)
-        
+            # Try alternative symbol format
+            alt_symbol = symbol.replace("_", " ").strip()
+            if alt_symbol != symbol:
+                logging.info(f"Trying alternative symbol format: {alt_symbol}")
+                df = await get_deriv_candles(alt_symbol, timeframe, 100)
+
+            if df.empty:
+                return {
+                    "error": f"No data available for {symbol}. Please check if the symbol is correct and try again.",
+                    "signal": "neutral",
+                    "confidence": 0,
+                    "symbol": symbol,
+                    "symbol_name": get_deriv_symbol_name(symbol)
+                }
+
+        # Perform advanced multi-technique analysis
+        analyzer = AdvancedSignalAnalyzer()
+        advanced_signal = analyzer.generate_professional_signal(df, symbol)
+
         # Get market session info
         session_info = get_current_market_session()
         kill_zone_info, is_kill_zone = check_kill_zone()
-        
+
         # AI Analysis for confirmation
-        ai_analysis = await get_deriv_ai_analysis(symbol, df, breakout_analysis)
-        
-        # Generate chart
-        chart_base64 = create_breakout_chart(df, symbol, breakout_analysis)
-        
+        ai_analysis = await get_deriv_ai_analysis(symbol, df, advanced_signal)
+
+        # Calculate price movement
+        price_change = 0
+        price_change_pct = 0
+        if len(df) >= 10:
+            prev_price = df['Close'].iloc[-10]
+            current_price_val = df['Close'].iloc[-1]
+            price_change = current_price_val - prev_price
+            price_change_pct = (price_change / prev_price) * 100 if prev_price > 0 else 0
+
         # Combine all analysis
         signal_data = {
             "symbol": symbol,
             "symbol_name": get_deriv_symbol_name(symbol),
             "timeframe": timeframe,
-            "current_price": round(df['Close'].iloc[-1], 5),
-            "signal": breakout_analysis.get("signal", "neutral"),
-            "confidence": breakout_analysis.get("confidence", 0),
-            "breakout_analysis": breakout_analysis,
+            "current_price": advanced_signal.get("current_price", round(df['Close'].iloc[-1], 5)),
+            "price_change": price_change,
+            "price_change_pct": price_change_pct,
+            "signal": advanced_signal.get("composite_signal", {}).get("signal", "neutral"),
+            "confidence": advanced_signal.get("composite_signal", {}).get("confidence", 0),
+            "advanced_analysis": advanced_signal,
             "ai_analysis": ai_analysis,
             "market_session": session_info,
             "kill_zone": kill_zone_info,
             "is_kill_zone": is_kill_zone,
-            "chart": chart_base64,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
         }
-        
+
         return signal_data
-        
+
     except Exception as e:
         logging.error(f"Error getting Deriv signal for {symbol}: {e}")
         return {
@@ -81,139 +98,259 @@ async def get_deriv_signal(symbol: str, timeframe: str = "15m") -> Dict:
             "confidence": 0
         }
 
-async def get_deriv_ai_analysis(symbol: str, df: pd.DataFrame, breakout_analysis: Dict) -> Dict:
-    """Get AI analysis for Deriv synthetic indices"""
+async def get_deriv_ai_analysis(symbol: str, df: pd.DataFrame, advanced_signal: Dict) -> Dict:
+    """Get AI analysis for Deriv synthetic indices using multiple techniques"""
     try:
         if not GROQ_API_KEY:
             return {"enabled": False, "reason": "No Groq API key"}
-        
-        client = Groq(api_key=GROQ_API_KEY)
-        
-        # Prepare data for AI
-        current_price = df['Close'].iloc[-1]
-        price_change = (df['Close'].iloc[-1] / df['Close'].iloc[-10] - 1) * 100
-        
-        # Get recent price action
-        recent_highs = df['High'].tail(20).max()
-        recent_lows = df['Low'].tail(20).min()
-        
-        prompt = f"""DERIV SYNTHETIC INDEX ANALYSIS - {symbol}
 
-CURRENT MARKET DATA:
-- Current Price: {current_price}
-- 10-period Change: {price_change:.2f}%
-- Recent High: {recent_highs}
-- Recent Low: {recent_lows}
-- 20-period Range: {((recent_highs - recent_lows) / recent_lows * 100):.2f}%
+        client = Groq(api_key=GROQ_API_KEY)
+
+        # Extract data from advanced signal
+        composite = advanced_signal.get("composite_signal", {})
+        breakout = advanced_signal.get("breakout_analysis", {})
+        ict = advanced_signal.get("ict_analysis", {})
+        smc = advanced_signal.get("smc_analysis", {})
+        crt = advanced_signal.get("crt_analysis", {})
+
+        current_price = advanced_signal.get("current_price", df['Close'].iloc[-1])
+        signal = composite.get("signal", "neutral")
+        confidence = composite.get("confidence", 0)
+
+        prompt = f"""PROFESSIONAL DERIV TRADING ANALYSIS - {symbol}
+
+📊 CURRENT MARKET DATA:
+• Current Price: {current_price}
+• Signal: {signal.upper()}
+• Confidence: {confidence}/10
+
+🔍 MULTI-TECHNIQUE ANALYSIS:
+
+ICT ANALYSIS:
+• Market Structure: {ict.get('market_structure', 'N/A')}
+• Liquidity Zones: {ict.get('liquidity_zones', 'N/A')}
+• Institutional Order Flow: {ict.get('order_flow', 'N/A')}
+
+SMC ANALYSIS:
+• Smart Money Concepts: {smc.get('smart_money_signal', 'N/A')}
+• Order Blocks: {smc.get('order_blocks', 'N/A')}
+• Internal Structure: {smc.get('internal_structure', 'N/A')}
+
+CRT ANALYSIS:
+• Change of Character: {crt.get('change_of_character', 'N/A')}
+• Volume Profile: {crt.get('volume_profile', 'N/A')}
+• Fair Value Gaps: {crt.get('fair_value_gaps', 'N/A')}
 
 BREAKOUT ANALYSIS:
-- Signal: {breakout_analysis.get('signal', 'neutral')}
-- Confidence: {breakout_analysis.get('confidence', 0)}/10
-- Breakout Direction: {breakout_analysis.get('breakout_direction', 'None')}
-- Breakout Strength: {breakout_analysis.get('breakout_strength', 0)}%
-- Retest Status: {breakout_analysis.get('retest_status', 'None')}
+• Pattern: {breakout.get('pattern', 'N/A')}
+• Retest Status: {breakout.get('retest_status', 'N/A')}
+• Breakout Strength: {breakout.get('breakout_strength', 0)}%
 
-ANALYSIS REQUIREMENTS:
-1. Evaluate the breakout pattern quality
-2. Assess risk/reward ratio
-3. Consider synthetic index characteristics
-4. Provide confidence score (1-10)
-5. Give specific trade recommendation
+📈 TRADING DECISION REQUIRED:
+Based on all techniques above, provide a professional trading recommendation.
 
-Respond with:
-- CONFIDENCE SCORE: X/10
-- RECOMMENDATION: BUY/SELL/NEUTRAL
-- REASONING: [Detailed analysis]
-- RISK LEVEL: LOW/MEDIUM/HIGH
+REQUIRED OUTPUT FORMAT:
+SIGNAL: BUY/SELL/HOLD
+CONFIDENCE: X/10
+REASONING: [2-3 sentences explaining the trade setup]
+RISK LEVEL: LOW/MEDIUM/HIGH
+ENTRY TRIGGER: [Specific price level or condition]
+STOP LOSS: [Price level]
+TAKE PROFIT: [Price level or multiple targets]
 """
 
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=500,
-            temperature=0.3
+            max_tokens=600,
+            temperature=0.2
         )
-        
+
         ai_response = response.choices[0].message.content
-        
-        # Parse AI response
-        confidence = parse_ai_confidence_score(ai_response) or 5
-        
+
+        # Parse AI response for key components
+        ai_signal = "neutral"
+        ai_confidence = confidence  # Default to technical confidence
+        ai_reasoning = ai_response
+        ai_risk_level = "MEDIUM"
+
+        # Extract signal from AI response
+        if "SIGNAL: BUY" in ai_response.upper():
+            ai_signal = "buy"
+        elif "SIGNAL: SELL" in ai_response.upper():
+            ai_signal = "sell"
+        elif "SIGNAL: HOLD" in ai_response.upper():
+            ai_signal = "hold"
+
+        # Extract confidence score
+        if "CONFIDENCE:" in ai_response:
+            try:
+                conf_text = ai_response.split("CONFIDENCE:")[1].split("/")[0].strip()
+                ai_confidence = int(conf_text) if conf_text.isdigit() else confidence
+            except:
+                pass
+
+        # Determine final signal (technical + AI confirmation)
+        final_signal = signal
+        final_confidence = confidence
+
+        # AI confirmation boost
+        if ai_signal in ["buy", "sell"] and signal == ai_signal:
+            final_confidence = min(10, confidence + 2)  # Boost confidence for agreement
+        elif ai_signal in ["buy", "sell"] and signal != ai_signal:
+            final_confidence = max(0, confidence - 2)  # Reduce confidence for disagreement
+
         return {
             "enabled": True,
-            "response": ai_response,
-            "confidence": confidence,
-            "approved": confidence >= AI_APPROVAL_MIN_SCORE
+            "ai_signal": ai_signal,
+            "ai_confidence": ai_confidence,
+            "ai_reasoning": ai_reasoning,
+            "ai_risk_level": ai_risk_level,
+            "final_signal": final_signal,
+            "final_confidence": final_confidence,
+            "ai_approved": ai_confidence >= AI_APPROVAL_MIN_SCORE,
+            "technique_agreement": signal == ai_signal
         }
-        
+
     except Exception as e:
         logging.error(f"AI analysis failed: {e}")
-        return {"enabled": False, "reason": str(e)}
+        return {
+            "enabled": False,
+            "reason": str(e),
+            "final_signal": "neutral",
+            "final_confidence": 0
+        }
 
 def format_deriv_signal(signal_data: Dict) -> str:
-    """Format Deriv signal for Telegram display"""
+    """Format Deriv signal for professional trading display"""
     if "error" in signal_data:
         return f"❌ *Error*: {signal_data['error']}"
-    
-    signal = signal_data["signal"]
-    confidence = signal_data["confidence"]
+
+    # Extract data
     symbol = signal_data["symbol"]
     symbol_name = signal_data["symbol_name"]
     current_price = signal_data["current_price"]
-    
-    # Signal emoji and confidence stars
-    signal_emoji = "🟢" if signal == "buy" else "🔴" if signal == "sell" else "🟡"
-    confidence_stars = "⭐" * min(confidence // 2, 5)
-    
-    # Breakout analysis
-    breakout = signal_data.get("breakout_analysis", {})
-    
-    message = f"""
-{signal_emoji} *{symbol_name} ({symbol})*
-{confidence_stars} *Confidence*: {confidence}/10
+    signal = signal_data.get("signal", "neutral")
+    confidence = signal_data.get("confidence", 0)
+    timeframe = signal_data.get("timeframe", "15m")
 
-*Current Price*: {current_price}
-*Timeframe*: {signal_data['timeframe']}
-*Market Session*: {signal_data['market_session']}
-*Kill Zone*: {signal_data['kill_zone']}
+    # Advanced analysis data
+    advanced = signal_data.get("advanced_analysis", {})
+    composite = advanced.get("composite_signal", {})
+    risk_mgmt = advanced.get("risk_management", {})
 
-*BREAKOUT ANALYSIS*:
-• Signal: {breakout.get('signal', 'neutral').upper()}
-• Direction: {breakout.get('breakout_direction', 'None')}
-• Strength: {breakout.get('breakout_strength', 0)}%
-• Retest: {breakout.get('retest_status', 'None')}
-
-*KEY LEVELS*:
-• Resistance: {breakout.get('resistance_level', 'N/A')}
-• Support: {breakout.get('support_level', 'N/A')}
-• Entry: {breakout.get('entry_price', 'N/A')}
-• Stop Loss: {breakout.get('stop_loss', 'N/A')}
-• Take Profit: {breakout.get('take_profit', 'N/A')}
-
-*INDICATORS*:
-• RSI: {breakout.get('rsi', 'N/A')}
-• MACD Histogram: {breakout.get('macd_histogram', 'N/A')}
-• Volume Confirmation: {"✅" if breakout.get('volume_confirmation') else "❌"}
-
-*AI ANALYSIS*:
-"""
-    
-    # Add AI analysis if available
+    # AI analysis
     ai_analysis = signal_data.get("ai_analysis", {})
-    if ai_analysis.get("enabled"):
-        ai_confidence = ai_analysis.get("confidence", 0)
-        ai_approved = "✅" if ai_analysis.get("approved") else "❌"
-        message += f"• AI Confidence: {ai_confidence}/10 {ai_approved}\n"
-        message += f"• AI Reasoning: {ai_analysis.get('response', 'N/A')[:200]}...\n"
-    else:
-        message += f"• AI Analysis: {ai_analysis.get('reason', 'Unavailable')}\n"
-    
-    message += f"""
-*Last Updated*: {signal_data['timestamp']}
+    ai_signal = ai_analysis.get("final_signal", signal)
+    ai_confidence = ai_analysis.get("final_confidence", confidence)
 
-⚠️ *Risk Warning*: Synthetic indices carry high risk. Trade with caution.
+    # Determine final trading decision
+    final_signal = ai_signal if ai_analysis.get("enabled") else signal
+    final_confidence = ai_confidence if ai_analysis.get("enabled") else confidence
+
+    # Signal formatting
+    signal_emoji = "🟢 BUY" if final_signal == "buy" else "🔴 SELL" if final_signal == "sell" else "🟡 HOLD"
+    confidence_stars = "⭐" * min(final_confidence // 2, 5)
+    risk_level = "🔴 HIGH" if final_confidence < 5 else "🟡 MEDIUM" if final_confidence < 8 else "🟢 LOW"
+
+    # Trading levels
+    entry_price = risk_mgmt.get("entry_price", current_price)
+    stop_loss = risk_mgmt.get("stop_loss", "Calculate based on risk")
+    take_profit = risk_mgmt.get("take_profit", "Target 1:2 RR minimum")
+    breakeven = risk_mgmt.get("breakeven", "Move to entry after 50% target")
+
+    # Build professional message
+    message = f"""
+🎯 *PROFESSIONAL TRADING SIGNAL*
+
+📊 *{symbol_name} ({symbol})*
+{signal_emoji} • {confidence_stars} Confidence: {final_confidence}/10
+⚠️ Risk Level: {risk_level}
+
+💰 *Current Price*: {current_price}
+⏰ *Timeframe*: {timeframe}
+📅 *Analysis*: {datetime.now().strftime('%H:%M UTC')}
+
+{'─' * 40}
+
+🔥 *TRADING RECOMMENDATION*
 """
-    
+
+    if final_signal in ["buy", "sell"]:
+        direction = "LONG (BUY)" if final_signal == "buy" else "SHORT (SELL)"
+        message += f"""
+✅ *SIGNAL: {direction}*
+🎯 *Confidence: {final_confidence}/10*
+
+💵 *ORDER DETAILS:*
+• Entry Price: {entry_price}
+• Stop Loss: {stop_loss}
+• Take Profit: {take_profit}
+• Breakeven: {breakeven}
+• Risk/Reward: {risk_mgmt.get('risk_reward_ratio', '1:2 minimum')}
+
+📋 *EXECUTION CHECKLIST:*
+✅ Account balance verified
+✅ Risk per trade ≤ 1-2%
+✅ Stop loss set first
+✅ Take profit at target levels
+✅ Monitor closely after entry
+"""
+
+        # AI Reasoning
+        if ai_analysis.get("enabled") and ai_analysis.get("ai_reasoning"):
+            reasoning = ai_analysis["ai_reasoning"]
+            # Extract key parts from AI response
+            if "REASONING:" in reasoning:
+                ai_reason = reasoning.split("REASONING:")[1].split("\n")[0][:150]
+            else:
+                ai_reason = reasoning[:150]
+
+            message += f"""
+🤖 *AI ANALYSIS:*
+{ai_reason}...
+"""
+    else:
+        message += """
+⚪ *SIGNAL: HOLD / NEUTRAL*
+
+📊 *Market conditions not favorable for new positions*
+
+⏳ *Wait for stronger signals before entering trades*
+"""
+
+    # Technical Analysis Summary
+    techniques = []
+    if advanced.get("ict_analysis"):
+        techniques.append("ICT")
+    if advanced.get("smc_analysis"):
+        techniques.append("SMC")
+    if advanced.get("crt_analysis"):
+        techniques.append("CRT")
+    if advanced.get("breakout_analysis"):
+        techniques.append("BREAKOUT")
+
+    if techniques:
+        message += f"""
+🔬 *TECHNIQUES USED:*
+{", ".join(techniques)} multi-timeframe analysis
+"""
+
+    message += f"""
+{'─' * 40}
+
+⚠️ *RISK MANAGEMENT:*
+• Never risk more than 1-2% per trade
+• Always use stop losses
+• Cut losses quickly, let profits run
+• Trade with proper position sizing
+
+🕒 *Signal expires in 4 hours*
+📈 *Trade responsibly with Baron AI*
+
+_Last updated: {signal_data['timestamp']}_
+"""
+
     return message
 
 async def get_deriv_market_summary() -> str:

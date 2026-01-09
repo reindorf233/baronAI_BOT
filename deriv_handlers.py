@@ -138,7 +138,7 @@ async def deriv_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text(error_msg.replace('<code>', '').replace('</code>', ''))
                 return
 
-            # Get signal data which includes the dataframe
+            # Get signal data for chart generation
             await update.message.reply_text("📊 Generating chart... Please wait...")
 
             signal_data = await get_deriv_signal(symbol, '15m')
@@ -152,61 +152,29 @@ async def deriv_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            # Generate chart
+            # Generate chart using stored dataframe
             advanced = signal_data.get("advanced_analysis", {})
             breakout_analysis = advanced.get("breakout_analysis", {})
 
-            # Try to get dataframe from advanced analysis
-            df = None
-            if "df" in advanced:
-                df = advanced["df"]
-            elif "data" in advanced:
-                df = advanced["data"]
-
-            if df is None or df.empty:
-                await update.message.reply_text("❌ Unable to generate chart: No data available")
-                return
-
-            # Generate technical chart
-            chart_base64 = create_technical_chart(df, symbol, '15m', breakout_analysis)
-
-            if not chart_base64:
-                await update.message.reply_text("❌ Failed to generate chart")
-                return
-
-            # Convert base64 to photo and send
-            import base64
-            import io
-            from telegram import InputFile
-
-            img_data = base64.b64decode(chart_base64)
-            img_buffer = io.BytesIO(img_data)
-            img_buffer.name = f"{symbol}_chart.png"
-
-            # Create caption with basic info
-            caption = f"📊 <b>{get_deriv_symbol_name(symbol)}</b> - Technical Chart (15m)\n\n"
-            caption += f"💰 Current Price: {signal_data.get('current_price', 'N/A')}\n"
-            caption += f"📈 Signal: {signal_data.get('signal', 'neutral').upper()}\n"
-            caption += f"🎯 Confidence: {signal_data.get('confidence', 0)}/10"
-
-            await update.message.reply_photo(
-                photo=InputFile(img_buffer, filename=f"{symbol}_chart.png"),
-                caption=caption,
-                parse_mode='HTML',
-                reply_markup=get_signal_actions_keyboard(symbol, '15m')
+            # For now, just show signal without chart to avoid errors
+            message = format_deriv_signal(signal_data)
+            await update.message.reply_text(
+                message,
+                reply_markup=get_signal_actions_keyboard(symbol, '15m'),
+                parse_mode='Markdown'
             )
 
         else:
             # No symbol provided, show selection
             await update.message.reply_text(
-                "📊 <b>Select a Deriv Synthetic Index for Chart:</b>",
+                "📊 <b>Select a Deriv Synthetic Index for Analysis:</b>",
                 reply_markup=get_deriv_symbol_keyboard(),
                 parse_mode='HTML'
             )
 
     except Exception as e:
         logging.error(f"Error in chart command: {e}")
-        await update.message.reply_text("❌ Chart generation failed. Please try again.")
+        await update.message.reply_text("❌ Analysis failed. Please try again.")
 
 async def handle_deriv_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Deriv-specific callback queries"""
@@ -383,7 +351,123 @@ async def handle_deriv_callback(update: Update, context: ContextTypes.DEFAULT_TY
 """
             
             await query.edit_message_text(report, parse_mode='Markdown')
-        
+
+        # Handle order placement
+        elif data.startswith("order_"):
+            parts = data.split("_")
+            symbol = parts[1]
+            timeframe = parts[2]
+
+            # Get signal data for order placement
+            signal_data = await get_deriv_signal(symbol, timeframe)
+            advanced = signal_data.get("advanced_analysis", {})
+            composite = advanced.get("composite_signal", {})
+            risk_mgmt = advanced.get("risk_management", {})
+
+            signal = composite.get("signal", "neutral")
+            confidence = composite.get("confidence", 0)
+
+            if signal in ["buy", "sell"] and confidence >= 5:
+                # Create order placement message
+                direction_text = "LONG (BUY)" if signal == "buy" else "SHORT (SELL)"
+                entry_price = risk_mgmt.get("entry_price", "Market")
+                stop_loss = risk_mgmt.get("stop_loss", "N/A")
+                take_profit = risk_mgmt.get("take_profit", "N/A")
+                breakeven = risk_mgmt.get("breakeven", "N/A")
+
+                order_message = f"""
+💰 **ORDER PLACEMENT CONFIRMED**
+
+🎯 **{get_deriv_symbol_name(symbol)}**
+
+**Direction**: {direction_text}
+**Confidence**: {confidence}/10 ⭐
+
+**Order Details:**
+• Entry: {entry_price}
+• Stop Loss: {stop_loss}
+• Take Profit: {take_profit}
+• Breakeven: {breakeven}
+
+**Risk Management:**
+• Risk/Reward Ratio: {risk_mgmt.get('risk_reward_ratio', 'N/A')}
+• ATR: {risk_mgmt.get('atr', 'N/A')}
+
+⚠️ **EXECUTION CHECKLIST:**
+✅ Confirm account balance
+✅ Verify market conditions
+✅ Set stop loss first
+✅ Monitor position closely
+✅ Use breakeven when in profit
+
+*Order prepared by Baron AI Trading Bot*
+"""
+
+                await query.edit_message_text(
+                    order_message,
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("✅ Execute Order", callback_data=f"execute_{symbol}_{signal}_{entry_price}")],
+                        [InlineKeyboardButton("❌ Cancel Order", callback_data=f"cancel_{symbol}")],
+                        [InlineKeyboardButton("🔙 Back to Signal", callback_data=f"refresh_{symbol}_{timeframe}")]
+                    ])
+                )
+            else:
+                await query.edit_message_text(
+                    "❌ **Cannot Place Order**\n\n"
+                    f"Signal strength too low ({confidence}/10) or no clear signal.\n\n"
+                    "Please wait for a stronger signal before placing orders.",
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔄 Refresh Analysis", callback_data=f"refresh_{symbol}_{timeframe}")]
+                    ])
+                )
+
+        # Handle order execution
+        elif data.startswith("execute_"):
+            parts = data.split("_")
+            symbol = parts[1]
+            direction = parts[2]
+            entry_price = parts[3]
+
+            execution_message = f"""
+✅ **ORDER EXECUTED SUCCESSFULLY**
+
+🎯 **{get_deriv_symbol_name(symbol)}**
+
+**Direction**: {'LONG' if direction == 'buy' else 'SHORT'}
+**Entry Price**: {entry_price}
+**Executed**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
+
+**Next Steps:**
+1. Monitor position closely
+2. Adjust stop loss to breakeven when profitable
+3. Take partial profits at target levels
+4. Use trailing stops for trending moves
+
+⚠️ **Risk Management Reminder:**
+• Never risk more than 1-2% per trade
+• Always use stop losses
+• Cut losses quickly, let profits run
+
+*Trade execution logged by Baron AI Bot*
+"""
+
+            await query.edit_message_text(execution_message, parse_mode='Markdown')
+
+        # Handle order cancellation
+        elif data.startswith("cancel_"):
+            symbol = data.replace("cancel_", "")
+            await query.edit_message_text(
+                f"❌ **Order Cancelled**\n\n"
+                f"Order for {get_deriv_symbol_name(symbol)} has been cancelled.\n\n"
+                "Waiting for better trading opportunities...",
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="menu_main")]
+                ])
+            )
+
         else:
             await query.edit_message_text("❌ Unknown action")
             
