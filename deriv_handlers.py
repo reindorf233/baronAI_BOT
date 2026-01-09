@@ -19,6 +19,7 @@ from deriv_menus import (
 )
 from deriv_client import is_deriv_symbol, get_deriv_symbol_name
 from utils import get_user_timezone, format_entry_time_display
+from chart_generator import create_technical_chart, create_breakout_chart
 
 # Conversation states
 WAITING_SYMBOL = 1
@@ -122,46 +123,90 @@ async def deriv_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Failed to generate summary.")
 
 async def deriv_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generate chart for a symbol"""
+    """Generate and send a technical chart for a Deriv symbol"""
     user_id = update.effective_user.id
-    
+
     try:
         if context.args:
+            # Symbol provided in command
             symbol = context.args[0].upper()
             if not is_deriv_symbol(symbol):
-                await update.message.reply_text("❌ Invalid Deriv symbol")
+                error_msg = f"❌ '{symbol}' is not a valid Deriv synthetic index\n\n📈 Valid symbols: <code>R_10</code>, <code>R_25</code>, <code>R_50</code>, <code>R_75</code>, <code>R_100</code>, <code>BOOM1000</code>, <code>CRASH1000</code>, <code>STEP INDEX</code>, etc."
+                try:
+                    await update.message.reply_text(error_msg, parse_mode='HTML')
+                except Exception:
+                    await update.message.reply_text(error_msg.replace('<code>', '').replace('</code>', ''))
                 return
-            
-            await update.message.reply_text("🔄 Generating chart...")
-            
-            # This would generate and send chart
-            from deriv_signals import get_deriv_signal
+
+            # Get signal data which includes the dataframe
+            await update.message.reply_text("📊 Generating chart... Please wait...")
+
             signal_data = await get_deriv_signal(symbol, '15m')
-            
-            if signal_data.get("chart"):
-                # Send chart image
-                import base64
-                from io import BytesIO
-                
-                chart_data = base64.b64decode(signal_data["chart"])
-                await update.message.reply_photo(
-                    photo=BytesIO(chart_data),
-                    caption=f"📈 {get_deriv_symbol_name(symbol)} Chart",
-                    parse_mode='Markdown'
+
+            if "error" in signal_data:
+                error_msg = format_deriv_signal(signal_data)
+                await update.message.reply_text(
+                    error_msg,
+                    reply_markup=get_signal_actions_keyboard(symbol, '15m'),
+                    parse_mode='HTML'
                 )
-            else:
-                await update.message.reply_text("❌ Chart generation failed")
-                
-        else:
-            await update.message.reply_text(
-                "📈 **Select symbol for chart:**",
-                reply_markup=get_deriv_symbol_keyboard(),
-                parse_mode='Markdown'
+                return
+
+            # Generate chart
+            advanced = signal_data.get("advanced_analysis", {})
+            breakout_analysis = advanced.get("breakout_analysis", {})
+
+            # Try to get dataframe from advanced analysis
+            df = None
+            if "df" in advanced:
+                df = advanced["df"]
+            elif "data" in advanced:
+                df = advanced["data"]
+
+            if df is None or df.empty:
+                await update.message.reply_text("❌ Unable to generate chart: No data available")
+                return
+
+            # Generate technical chart
+            chart_base64 = create_technical_chart(df, symbol, '15m', breakout_analysis)
+
+            if not chart_base64:
+                await update.message.reply_text("❌ Failed to generate chart")
+                return
+
+            # Convert base64 to photo and send
+            import base64
+            import io
+            from telegram import InputFile
+
+            img_data = base64.b64decode(chart_base64)
+            img_buffer = io.BytesIO(img_data)
+            img_buffer.name = f"{symbol}_chart.png"
+
+            # Create caption with basic info
+            caption = f"📊 <b>{get_deriv_symbol_name(symbol)}</b> - Technical Chart (15m)\n\n"
+            caption += f"💰 Current Price: {signal_data.get('current_price', 'N/A')}\n"
+            caption += f"📈 Signal: {signal_data.get('signal', 'neutral').upper()}\n"
+            caption += f"🎯 Confidence: {signal_data.get('confidence', 0)}/10"
+
+            await update.message.reply_photo(
+                photo=InputFile(img_buffer, filename=f"{symbol}_chart.png"),
+                caption=caption,
+                parse_mode='HTML',
+                reply_markup=get_signal_actions_keyboard(symbol, '15m')
             )
-            
+
+        else:
+            # No symbol provided, show selection
+            await update.message.reply_text(
+                "📊 <b>Select a Deriv Synthetic Index for Chart:</b>",
+                reply_markup=get_deriv_symbol_keyboard(),
+                parse_mode='HTML'
+            )
+
     except Exception as e:
         logging.error(f"Error in chart command: {e}")
-        await update.message.reply_text("❌ Chart generation failed.")
+        await update.message.reply_text("❌ Chart generation failed. Please try again.")
 
 async def handle_deriv_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Deriv-specific callback queries"""

@@ -9,6 +9,7 @@ from typing import Dict, Optional, Tuple
 
 from deriv_client import deriv_client, get_deriv_candles, is_deriv_symbol, get_deriv_symbol_name
 from breakout_analysis import detect_breakout_retest, format_breakout_signal
+from advanced_signals_fixed import AdvancedSignalAnalyzer
 from chart_generator import create_technical_chart, create_breakout_chart
 from utils import (
     normalize_symbol, check_kill_zone, parse_ai_confidence_score,
